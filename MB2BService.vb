@@ -246,8 +246,6 @@ Public Class MB2BService
     Public Function SavetoBase(Port As String, Address As String, BacketCounter As ULong, WaterCounter As ULong) As Boolean
         Dim dbConn As New OleDbConnection()
         ' Подключаемся к базе для записи данных
-        If debug Then EventLog1.WriteEntry("Начало записи " & " Счетчик ковшей: " & BacketCounter & " Счетчик воды: " & WaterCounter _
-                                 , EventLogEntryType.Warning, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
 
         If BacketCounter = 0 Or WaterCounter = 0 Then
             If debug Then EventLog1.WriteEntry("Ошибка получения данных " & " Счетчик ковшей: " & BacketCounter & " Счетчик воды: " & WaterCounter _
