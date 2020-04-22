@@ -48,7 +48,7 @@ Public Class MB2BService
 
     Public Sub GetData()
 
-        Dim BaudRate, BaudRateFromDB As Integer
+        Dim BaudRate, BaudRateFromDB, id, idFromDB As Integer
 
         Dim ComPortName, Address, ComPortNameFromDB, AddressFromDB, DescriptionFromDB As String
         Dim Collectors As New List(Of Collector)()
@@ -78,6 +78,12 @@ Public Class MB2BService
             While (reader.Read())
                 ' Если пустое значение, то присваиваем переменной 0
 
+                If Not reader.IsDBNull(reader.GetOrdinal("id")) Then
+                    idFromDB = reader(reader.GetOrdinal("id"))
+                Else
+                    ComPortNameFromDB = ""
+                End If
+
                 If Not reader.IsDBNull(reader.GetOrdinal("ComPortName")) Then
                     ComPortNameFromDB = reader(reader.GetOrdinal("ComPortName"))
                 Else
@@ -104,13 +110,15 @@ Public Class MB2BService
 
                 If debug Then EventLog1.WriteEntry(Now.ToString _
                                      & " Добавлено устройство  " _
+                                      & " ID " & idFromDB & vbCrLf _
                                      & " Компорт: " & ComPortNameFromDB & vbCrLf _
                                      & " Скорость компорта: " & BaudRateFromDB & vbCrLf _
                                      & " Адрес устройства: " & AddressFromDB & vbCrLf _
                                      & " Описание: " & DescriptionFromDB & vbCrLf _
                                      , EventLogEntryType.Information, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
 
-                Collectors.Add(New Collector() With {.ComPortName = ComPortNameFromDB,
+                Collectors.Add(New Collector() With {.Id = idFromDB,
+                                                     .ComPortName = ComPortNameFromDB,
                                                      .BaudRate = BaudRateFromDB,
                                                      .Address = AddressFromDB,
                                                      .Description = DescriptionFromDB})
@@ -165,7 +173,7 @@ Public Class MB2BService
                                                                & " Счетчик воды: " & iWaterCollector & vbCrLf _
                                                                  , EventLogEntryType.Information, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
 
-                        SavetoBase(ComPortName, Address, iBacketCounter, iWaterCollector)
+                        SavetoBase(Id, iBacketCounter, iWaterCollector)
 
                         ModbusPort.Close()
                         End If
@@ -243,7 +251,7 @@ Public Class MB2BService
         End Try
     End Sub
 
-    Public Function SavetoBase(Port As String, Address As String, BacketCounter As ULong, WaterCounter As ULong) As Boolean
+    Public Function SavetoBase(Id As Integer, BacketCounter As ULong, WaterCounter As ULong) As Boolean
         Dim dbConn As New OleDbConnection()
         ' Подключаемся к базе для записи данных
 
@@ -263,9 +271,8 @@ Public Class MB2BService
         Try
             ' Делаем запрос
             Dim dbCommand As OleDbCommand = dbConn.CreateCommand()
-            dbCommand.CommandText = "insert into AccuCollectors ([datetime], [Port],[Address],[BacketCounter],[WaterCounter]) VALUES (getdate(), ?, ?, ?, ?)"
-            dbCommand.Parameters.Add("Port", OleDbType.[VarChar]).Value = Port
-            dbCommand.Parameters.Add("Address", OleDbType.[VarChar]).Value = Address
+            dbCommand.CommandText = "insert into AccuCollectors ([datetime], [id],[BacketCounter],[WaterCounter]) VALUES (getdate(), ?, ?, ?)"
+            dbCommand.Parameters.Add("Id", OleDbType.Integer).Value = Id
             dbCommand.Parameters.Add("BacketCounter", OleDbType.UnsignedInt).Value = BacketCounter
             dbCommand.Parameters.Add("WaterCounter", OleDbType.UnsignedInt).Value = WaterCounter
             dbCommand.ExecuteNonQuery()
@@ -284,6 +291,7 @@ End Class
 
 Friend Class Collector
     ' Класс для сохранения данных счетчика
+    Public Property Id As Integer
     Public Property ComPortName As String
     Public Property BaudRate As Integer
     Public Property Address As String
