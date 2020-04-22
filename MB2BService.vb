@@ -51,6 +51,9 @@ Public Class MB2BService
         Dim BaudRate, BaudRateFromDB, id, idFromDB As Integer
 
         Dim ComPortName, Address, ComPortNameFromDB, AddressFromDB, DescriptionFromDB As String
+
+        Dim CollectorIsActive As Boolean
+
         Dim Collectors As New List(Of Collector)()
 
         Dim dbConn As New OleDbConnection()
@@ -80,6 +83,12 @@ Public Class MB2BService
 
                 If Not reader.IsDBNull(reader.GetOrdinal("id")) Then
                     idFromDB = reader(reader.GetOrdinal("id"))
+                Else
+                    idFromDB = ""
+                End If
+
+                If Not reader.IsDBNull(reader.GetOrdinal("isActive")) Then
+                    CollectorIsActive = reader(reader.GetOrdinal("isActive"))
                 Else
                     ComPortNameFromDB = ""
                 End If
@@ -118,6 +127,7 @@ Public Class MB2BService
                                      , EventLogEntryType.Information, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
 
                 Collectors.Add(New Collector() With {.Id = idFromDB,
+                                                     .IsActive = CollectorIsActive,
                                                      .ComPortName = ComPortNameFromDB,
                                                      .BaudRate = BaudRateFromDB,
                                                      .Address = AddressFromDB,
@@ -136,10 +146,13 @@ Public Class MB2BService
         ' Начинаем опрашивать счетчики
         For Each Collector As Collector In Collectors
             Try
+                If Not Collector.IsActive Then Continue For
+
                 ComPortName = Collector.ComPortName
                 Address = Collector.Address
                 BaudRate = Collector.BaudRate
-                If debug Then EventLog1.WriteEntry("Компорт: " & ComPortName & "   Адрес счетчика: " & Address & " Скорость порта: " & BaudRate, EventLogEntryType.Information, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
+                id = Collector.Id
+                If debug Then EventLog1.WriteEntry("ID: " & id & " Компорт: " & ComPortName & "   Адрес счетчика: " & Address & " Скорость порта: " & BaudRate, EventLogEntryType.Information, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
                 If Not ModbusPort.IsOpen Then
                     ' Открываем компорт
                     ModbusPort.PortName = ComPortName
@@ -157,9 +170,9 @@ Public Class MB2BService
                     End Try
                 End If
                 Try
-                        Dim master As Modbus.Device.IModbusSerialMaster = Modbus.Device.ModbusSerialMaster.CreateRtu(ModbusPort)
-                        master.Transport.Retries = 0
-                        master.Transport.ReadTimeout = 500  'millionsecs
+                    Dim master As Modbus.Device.IModbusSerialMaster = Modbus.Device.ModbusSerialMaster.CreateRtu(ModbusPort)
+                    master.Transport.Retries = 0
+                    master.Transport.ReadTimeout = 500  'millionsecs
 
                     Dim DataFromDevice As UShort() = ModbusDataReader(master, Address, 512, 4)
                     If DataFromDevice.Length <> 0 Then
@@ -173,16 +186,16 @@ Public Class MB2BService
                                                                & " Счетчик воды: " & iWaterCollector & vbCrLf _
                                                                  , EventLogEntryType.Information, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
 
-                        SavetoBase(Id, iBacketCounter, iWaterCollector)
+                        SavetoBase(id, iBacketCounter, iWaterCollector)
 
                         ModbusPort.Close()
-                        End If
-                    Catch Ex As Exception
-                        If debug Then EventLog1.WriteEntry(Ex.Message, EventLogEntryType.Warning, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
+                    End If
+                Catch Ex As Exception
+                    If debug Then EventLog1.WriteEntry(Ex.Message, EventLogEntryType.Warning, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
                     SaveAlarmToBase("Компорт " & ComPortName & " Адрес " & Address & Ex.Message)
                     ModbusPort.Close()
-                        Continue For
-                    End Try
+                    Continue For
+                End Try
 
             Catch Ex As Exception
                 If debug Then EventLog1.WriteEntry(Ex.Message, EventLogEntryType.Warning, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
@@ -251,7 +264,7 @@ Public Class MB2BService
         End Try
     End Sub
 
-    Public Function SavetoBase(Id As Integer, BacketCounter As ULong, WaterCounter As ULong) As Boolean
+    Public Function SavetoBase(CollectorId As Integer, BacketCounter As ULong, WaterCounter As ULong) As Boolean
         Dim dbConn As New OleDbConnection()
         ' Подключаемся к базе для записи данных
 
@@ -271,8 +284,8 @@ Public Class MB2BService
         Try
             ' Делаем запрос
             Dim dbCommand As OleDbCommand = dbConn.CreateCommand()
-            dbCommand.CommandText = "insert into AccuCollectors ([datetime], [id],[BacketCounter],[WaterCounter]) VALUES (getdate(), ?, ?, ?)"
-            dbCommand.Parameters.Add("Id", OleDbType.Integer).Value = Id
+            dbCommand.CommandText = "insert into AccuCollectors ([datetime], [Collectorid],[BacketCounter],[WaterCounter]) VALUES (getdate(), ?, ?, ?)"
+            dbCommand.Parameters.Add("CollectorId", OleDbType.Integer).Value = CollectorId
             dbCommand.Parameters.Add("BacketCounter", OleDbType.UnsignedInt).Value = BacketCounter
             dbCommand.Parameters.Add("WaterCounter", OleDbType.UnsignedInt).Value = WaterCounter
             dbCommand.ExecuteNonQuery()
@@ -292,6 +305,7 @@ End Class
 Friend Class Collector
     ' Класс для сохранения данных счетчика
     Public Property Id As Integer
+    Public Property IsActive As Boolean
     Public Property ComPortName As String
     Public Property BaudRate As Integer
     Public Property Address As String
