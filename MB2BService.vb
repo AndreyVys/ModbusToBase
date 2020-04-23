@@ -48,9 +48,9 @@ Public Class MB2BService
 
     Public Sub GetData()
 
-        Dim BaudRate, BaudRateFromDB, id, idFromDB As Integer
+        Dim BaudRateFromDB, idFromDB As Integer
 
-        Dim ComPortName, Address, ComPortNameFromDB, AddressFromDB, DescriptionFromDB As String
+        Dim ComPortNameFromDB, AddressFromDB, DescriptionFromDB As String
 
         Dim CollectorIsActive As Boolean
 
@@ -84,13 +84,13 @@ Public Class MB2BService
                 If Not reader.IsDBNull(reader.GetOrdinal("id")) Then
                     idFromDB = reader(reader.GetOrdinal("id"))
                 Else
-                    idFromDB = ""
+                    idFromDB = 0
                 End If
 
                 If Not reader.IsDBNull(reader.GetOrdinal("isActive")) Then
                     CollectorIsActive = reader(reader.GetOrdinal("isActive"))
                 Else
-                    ComPortNameFromDB = ""
+                    CollectorIsActive = False
                 End If
 
                 If Not reader.IsDBNull(reader.GetOrdinal("ComPortName")) Then
@@ -119,14 +119,14 @@ Public Class MB2BService
 
                 If debug Then EventLog1.WriteEntry(Now.ToString _
                                      & " Добавлено устройство  " _
-                                      & " ID " & idFromDB & vbCrLf _
+                                     & " ID " & idFromDB & vbCrLf _
                                      & " Компорт: " & ComPortNameFromDB & vbCrLf _
                                      & " Скорость компорта: " & BaudRateFromDB & vbCrLf _
                                      & " Адрес устройства: " & AddressFromDB & vbCrLf _
                                      & " Описание: " & DescriptionFromDB & vbCrLf _
                                      , EventLogEntryType.Information, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
 
-                Collectors.Add(New Collector() With {.Id = idFromDB,
+                If CollectorIsActive Then Collectors.Add(New Collector() With {.Id = idFromDB,
                                                      .IsActive = CollectorIsActive,
                                                      .ComPortName = ComPortNameFromDB,
                                                      .BaudRate = BaudRateFromDB,
@@ -146,25 +146,19 @@ Public Class MB2BService
         ' Начинаем опрашивать счетчики
         For Each Collector As Collector In Collectors
             Try
-                If Not Collector.IsActive Then Continue For
-
-                ComPortName = Collector.ComPortName
-                Address = Collector.Address
-                BaudRate = Collector.BaudRate
-                id = Collector.Id
-                If debug Then EventLog1.WriteEntry("ID: " & id & " Компорт: " & ComPortName & "   Адрес счетчика: " & Address & " Скорость порта: " & BaudRate, EventLogEntryType.Information, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
+                If debug Then EventLog1.WriteEntry("ID: " & Collector.Id & " Компорт: " & Collector.ComPortName & "   Адрес счетчика: " & Collector.Address & " Скорость порта: " & Collector.BaudRate, EventLogEntryType.Information, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
                 If Not ModbusPort.IsOpen Then
                     ' Открываем компорт
-                    ModbusPort.PortName = ComPortName
+                    ModbusPort.PortName = Collector.ComPortName
                     ModbusPort.ReadTimeout = 5000
-                    ModbusPort.BaudRate = BaudRate
+                    ModbusPort.BaudRate = Collector.BaudRate
                     Try
                         ModbusPort.Open()
                         ModbusPort.DiscardInBuffer()
                         ModbusPort.DiscardOutBuffer()
                     Catch ex As Exception
-                        If debug Then EventLog1.WriteEntry("Ошибка открытия порта " & ComPortName, EventLogEntryType.Error, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
-                        SaveAlarmToBase("Ошибка открытия порта " & ComPortName)
+                        If debug Then EventLog1.WriteEntry("Ошибка открытия порта " & Collector.ComPortName, EventLogEntryType.Error, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
+                        SaveAlarmToBase("Ошибка открытия порта " & Collector.ComPortName)
                         ModbusPort.Close()
                         Continue For
                     End Try
@@ -174,25 +168,27 @@ Public Class MB2BService
                     master.Transport.Retries = 0
                     master.Transport.ReadTimeout = 500  'millionsecs
 
-                    Dim DataFromDevice As UShort() = ModbusDataReader(master, Address, 512, 4)
+                    Dim DataFromDevice As UShort() = ModbusDataReader(master, Collector.Address, 512, 6)
                     If DataFromDevice.Length <> 0 Then
                         Dim iBacketCounter As ULong = DataFromDevice(1) * &HFFFF + DataFromDevice(0)
-                        Dim iWaterCollector As ULong = DataFromDevice(3) * &HFFFF + DataFromDevice(2)
+                        Dim iWaterGVSCollector As ULong = DataFromDevice(3) * &HFFFF + DataFromDevice(2)
+                        Dim iWaterHeatingCollector As ULong = DataFromDevice(5) * &HFFFF + DataFromDevice(4)
 
                         If debug Then EventLog1.WriteEntry(Now.ToString _
-                                                               & " Компорт: " & ComPortName & vbCrLf _
-                                                               & " Адрес устройства: " & Address & vbCrLf _
+                                                               & " Компорт: " & Collector.ComPortName & vbCrLf _
+                                                               & " Адрес устройства: " & Collector.Address & vbCrLf _
                                                                & " Счетчик ковшей: " & iBacketCounter & vbCrLf _
-                                                               & " Счетчик воды: " & iWaterCollector & vbCrLf _
+                                                               & " Счетчик горячей воды: " & iWaterGVSCollector & vbCrLf _
+                                                               & " Счетчик воды отопления: " & iWaterHeatingCollector & vbCrLf _
                                                                  , EventLogEntryType.Information, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
 
-                        SavetoBase(id, iBacketCounter, iWaterCollector)
+                        SavetoBase(Collector.Id, iBacketCounter, iWaterGVSCollector, iWaterHeatingCollector)
 
                         ModbusPort.Close()
                     End If
                 Catch Ex As Exception
                     If debug Then EventLog1.WriteEntry(Ex.Message, EventLogEntryType.Warning, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
-                    SaveAlarmToBase("Компорт " & ComPortName & " Адрес " & Address & Ex.Message)
+                    SaveAlarmToBase("Компорт " & Collector.ComPortName & " Адрес " & Collector.Address & Ex.Message)
                     ModbusPort.Close()
                     Continue For
                 End Try
@@ -264,14 +260,16 @@ Public Class MB2BService
         End Try
     End Sub
 
-    Public Function SavetoBase(CollectorId As Integer, BacketCounter As ULong, WaterCounter As ULong) As Boolean
+    Public Function SavetoBase(CollectorId As Integer, BacketCounter As ULong, WaterGVSCounter As ULong, WaterHeatingCounter As ULong) As Boolean
         Dim dbConn As New OleDbConnection()
         ' Подключаемся к базе для записи данных
 
-        If BacketCounter = 0 Or WaterCounter = 0 Then
-            If debug Then EventLog1.WriteEntry("Ошибка получения данных " & " Счетчик ковшей: " & BacketCounter & " Счетчик воды: " & WaterCounter _
+        If BacketCounter = 0 Or WaterGVSCounter = 0 Or WaterHeatingCounter = 0 Then
+            If debug Then
+                EventLog1.WriteEntry("Ошибка получения данных " & " Счетчик ковшей: " & BacketCounter & " Счетчик горячей воды: " & WaterGVSCounter & " Счетчик воды отопления: " & WaterHeatingCounter _
                                  , EventLogEntryType.Warning, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
-            Return False
+                SaveAlarmToBase("Ошибка получения данных " & " Счетчик ковшей: " & BacketCounter & " Счетчик горячей воды: " & WaterGVSCounter & " Счетчик воды отопления: " & WaterHeatingCounter)
+                Return False
         End If
         Try
             dbConn.ConnectionString = "Provider=SQLOLEDB; Data Source=localhost\SQLEXPRESS; Initial Catalog=MB2B; Persist Security Info=False; User Id=mb2b; Password=mb2b"
@@ -284,10 +282,11 @@ Public Class MB2BService
         Try
             ' Делаем запрос
             Dim dbCommand As OleDbCommand = dbConn.CreateCommand()
-            dbCommand.CommandText = "insert into AccuCollectors ([datetime], [Collectorid],[BacketCounter],[WaterCounter]) VALUES (getdate(), ?, ?, ?)"
+            dbCommand.CommandText = "insert into AccuCollectors ([datetime], [Collectorid],[BacketCounter],[WaterGVSCounter],[WaterHeatingCounter]) VALUES (getdate(), ?, ?, ?, ?)"
             dbCommand.Parameters.Add("CollectorId", OleDbType.Integer).Value = CollectorId
             dbCommand.Parameters.Add("BacketCounter", OleDbType.UnsignedInt).Value = BacketCounter
-            dbCommand.Parameters.Add("WaterCounter", OleDbType.UnsignedInt).Value = WaterCounter
+            dbCommand.Parameters.Add("WaterGVSCounter", OleDbType.UnsignedInt).Value = WaterGVSCounter
+            dbCommand.Parameters.Add("WaterHeatingCounter", OleDbType.UnsignedInt).Value = WaterHeatingCounter
             dbCommand.ExecuteNonQuery()
             dbConn.Close()
             Return True
