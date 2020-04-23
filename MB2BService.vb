@@ -269,7 +269,8 @@ Public Class MB2BService
                 EventLog1.WriteEntry("Ошибка получения данных " & " Счетчик ковшей: " & BacketCounter & " Счетчик горячей воды: " & WaterGVSCounter & " Счетчик воды отопления: " & WaterHeatingCounter _
                                  , EventLogEntryType.Warning, Math.Max(Threading.Interlocked.Increment(eventId), eventId - 1))
                 SaveAlarmToBase("Ошибка получения данных " & " Счетчик ковшей: " & BacketCounter & " Счетчик горячей воды: " & WaterGVSCounter & " Счетчик воды отопления: " & WaterHeatingCounter)
-                Return False
+            End If
+            Return False
         End If
         Try
             dbConn.ConnectionString = "Provider=SQLOLEDB; Data Source=localhost\SQLEXPRESS; Initial Catalog=MB2B; Persist Security Info=False; User Id=mb2b; Password=mb2b"
