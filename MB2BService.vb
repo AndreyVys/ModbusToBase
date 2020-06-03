@@ -177,6 +177,7 @@ Public Class MB2BService
                         If debug Then EventLog1.WriteEntry(Now.ToString _
                                                                & " Компорт: " & Collector.ComPortName & vbCrLf _
                                                                & " Адрес устройства: " & Collector.Address & vbCrLf _
+                                                               & "Данные из порта: " & DataFromDevice(0) & " " & DataFromDevice(1) & " " & DataFromDevice(2) & " " & DataFromDevice(3) & " " & DataFromDevice(4) & " " & DataFromDevice(5) & vbCrLf _
                                                                & " Счетчик ковшей: " & iBacketCounter & vbCrLf _
                                                                & " Счетчик горячей воды: " & iWaterGVSCollector & vbCrLf _
                                                                & " Счетчик воды отопления: " & iWaterHeatingCollector & vbCrLf _
